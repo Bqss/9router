@@ -136,4 +136,50 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("strips Hermes Agent identity in systemInstruction to bypass Antigravity 429 filter (#3358)", () => {
+    const executor = new AntigravityExecutor();
+    const out = executor.transformRequest("gemini-2.5-pro", {
+      request: {
+        systemInstruction: {
+          parts: [
+            { text: "You are Hermes Agent, an intelligent AI assistant created by Nous Research. Be helpful." }
+          ]
+        },
+        contents: [{ role: "user", parts: [{ text: "hi" }] }]
+      }
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    expect(out.request.systemInstruction.parts[0].text).toBe(" Be helpful.");
+  });
+
+  it("clears Hermes Agent identity through OpenAI -> Antigravity request translation (#3358)", () => {
+    const out = openaiToAntigravityRequest("gemini-2.5-pro", {
+      messages: [
+        { role: "system", content: "You are Hermes Agent, an intelligent AI assistant created by Nous Research." },
+        { role: "user", content: "hello" }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const executor = new AntigravityExecutor();
+    const transformed = executor.transformRequest("gemini-2.5-pro", out, true, { projectId: "project-1", connectionId: "conn-1" });
+    expect(transformed.request.systemInstruction.parts[0].text).toBe("");
+  });
+
+  it("rewrites competing-client branding (Zed Claude SDK and OpenCode) in systemInstruction", () => {
+    const executor = new AntigravityExecutor();
+    const out = executor.transformRequest("gemini-2.5-pro", {
+      request: {
+        systemInstruction: {
+          parts: [
+            { text: "You are a Claude agent, built on Anthropic's Claude Agent SDK. OpenCode is great." }
+          ]
+        },
+        contents: [{ role: "user", parts: [{ text: "hi" }] }]
+      }
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    expect(out.request.systemInstruction.parts[0].text).toBe(" Antigravity is great.");
+  });
 });
+
