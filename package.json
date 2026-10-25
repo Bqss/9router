@@ -46,11 +46,11 @@
     "sql.js": "^1.14.1",
     "undici": "^7.30.1",
     "uuid": "^13.0.0",
-    "zustand": "^5.0.10"
+    "zustand": "^5.0.10",
+    "ajv": "^8.17.1"
   },
   "optionalDependencies": {
     "@aws-sdk/credential-providers": "^3.1135.0",
-    "ajv": "^8.17.1",
     "better-sqlite3": "^12.6.2",
     "ws": "^8.18.0"
   },
