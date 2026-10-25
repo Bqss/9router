@@ -1,4 +1,5 @@
 import { DefaultExecutor } from "./default.js";
+import { randomUUID } from "node:crypto";
 
 /**
  * CodeBuddyIntlExecutor — talks to https://www.codebuddy.ai/v2/chat/completions
@@ -7,10 +8,24 @@ import { DefaultExecutor } from "./default.js";
  * non-stream requests are rejected, and reasoning is surfaced only when the
  * request carries the IDE's OpenAI-style reasoning params. Force stream and
  * mirror reasoning_summary exactly like CodeBuddyExecutor.
+ *
+ * Since ~Oct 2026, the CodeBuddy Intl gateway validates channel origin by
+ * requiring three per-request UUID headers (code 11128 "request illegal" when
+ * absent). Inject them on every request to pass channel verification.
  */
 export class CodeBuddyIntlExecutor extends DefaultExecutor {
   constructor() {
     super("codebuddy-intl");
+  }
+
+  buildHeaders(credentials, stream = true, url, model, body = null) {
+    const headers = super.buildHeaders(credentials, stream, url, model, body);
+    // Channel verification headers required since ~Oct 2026 (code 11128 when absent).
+    // All three must be present; each is scoped to the current request.
+    headers["X-Conversation-ID"] = randomUUID();
+    headers["X-Conversation-Request-ID"] = randomUUID();
+    headers["X-Conversation-Message-ID"] = randomUUID();
+    return headers;
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -44,6 +59,14 @@ export class CodeBuddyIntlExecutor extends DefaultExecutor {
       try {
         const data = JSON.parse(bodyText);
         const msg = data?.msg || data?.message || data?.error?.message || "";
+        // Channel verification failure — missing X-Conversation-* headers or
+        // request didn't originate from an official client fingerprint.
+        if (data?.code === 11128) {
+          return {
+            status: 400,
+            message: msg || "CodeBuddy channel verification failed (11128)",
+          };
+        }
         if (data?.code === 6004 || /超出频率限制|frequency limit|限额/i.test(msg)) {
           let resetsAtMs = null;
           const match = msg.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})(?:\s*UTC\+?([0-9:]+))?/i);
