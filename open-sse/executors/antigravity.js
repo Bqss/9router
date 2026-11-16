@@ -54,6 +54,88 @@ const ANTIGRAVITY_REQUEST_BLACKLIST = [
 const stripBlacklisted = obj => {
   for (const key of ANTIGRAVITY_REQUEST_BLACKLIST) delete obj[key];
 };
+function stripDiagnosticPromptSectionByName(text, section) {
+  if (section === "available_skills") {
+    return text.replace(/<available_skills>[\s\S]*?<\/available_skills>/gi, "");
+  }
+  if (section === "skills") {
+    return text.replace(/## Skills[\s\S]*?(?=\nActive (?:Hermes|assistant) profile:)/i, "");
+  }
+  if (section === "tool_policy") {
+    return text.replace(/# Tool-use enforcement[\s\S]*?(?=\n# Google model operational directives)/i, "");
+  }
+  if (section === "mid_turn") {
+    return text.replace(/## Mid-turn user steering[\s\S]*?(?=\n# Tool-use enforcement)/i, "");
+  }
+  if (section === "desktop_ui") {
+    return text.replace(/You are chatting inside the assistant desktop app[\s\S]*?(?=\n## Skills)/i, "");
+  }
+  if (section === "operational") {
+    return text.replace(/# Google model operational directives[\s\S]*?(?=\nYou are chatting inside the assistant desktop app)/i, "");
+  }
+  if (section === "control_blocks") {
+    return text
+      .replace(/## Mid-turn user steering[\s\S]*?(?=\n# Tool-use enforcement)/i, "")
+      .replace(/# Tool-use enforcement[\s\S]*?(?=\n# Google model operational directives)/i, "")
+      .replace(/# Google model operational directives[\s\S]*?(?=\nYou are chatting inside the assistant desktop app)/i, "")
+      .replace(/You are chatting inside the assistant desktop app[\s\S]*?(?=\n## Skills)/i, "")
+      .replace(/## Skills[\s\S]*?(?=\nConversation started:)/i, "");
+  }
+  if (section === "intro") {
+    return text.replace(/^[\s\S]*?(?=\n\nFor help with (?:Hermes Agent|AI assistant|assistant))/i, "");
+  }
+  if (section === "docs") {
+    return text.replace(/For help with (?:Hermes Agent|AI assistant|assistant)[\s\S]*?(?=\n\n# Finishing the job)/i, "");
+  }
+  if (section === "finishing") {
+    return text.replace(/# Finishing the job[\s\S]*?(?=\n\n# Parallel tool calls)/i, "");
+  }
+  if (section === "parallel") {
+    return text.replace(/# Parallel tool calls[\s\S]*?(?=\n\nYou have persistent memory)/i, "");
+  }
+  if (section === "memory") {
+    return text.replace(/You have persistent memory[\s\S]*?(?=\n(?:## Mid-turn user steering|# Tool-use enforcement|# Google model operational directives|You are chatting inside the assistant desktop app|## Skills|Conversation started:))/i, "");
+  }
+  if (section === "profile") {
+    return text.replace(/Active (?:Hermes|assistant) profile:[\s\S]*?(?=\nConversation started:)/i, "");
+  }
+  if (section === "runtime") {
+    return text.replace(/\nConversation started:[\s\S]*$/i, "");
+  }
+  const partMatch = section.match(/^part[_-]?(\d+)$/);
+  if (partMatch) {
+    const index = Number(partMatch[1]) - 1;
+    if (index >= 0) {
+      const parts = text.split(/\n\n+/);
+      if (index < parts.length) parts.splice(index, 1);
+      return parts.join("\n\n");
+    }
+  }
+  if (section === "head") {
+    return text.split(/\n\n+/).slice(0, 8).join("\n\n");
+  }
+  if (section === "tail") {
+    return text.split(/\n\n+/).slice(8).join("\n\n");
+  }
+  return text;
+}
+
+function getDiagnosticPromptSections() {
+  return [
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION,
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS,
+  ]
+    .flatMap(value => String(value || "").split(","))
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function stripDiagnosticPromptSection(text) {
+  return getDiagnosticPromptSections().reduce(
+    (current, section) => stripDiagnosticPromptSectionByName(current, section),
+    text,
+  );
+}
 
 // Image generation model name patterns
 const IMAGE_MODEL_PATTERNS = [
@@ -301,14 +383,18 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
-    if (requestWithoutTools.systemInstruction?.parts) {
+    const stripSystemPrompt = ["1", "true", "yes", "on"].includes(
+      String(process.env.ANTIGRAVITY_STRIP_SYSTEM_PROMPT || "").toLowerCase()
+    );
+    if (stripSystemPrompt) {
+      delete requestWithoutTools.systemInstruction;
+    } else if (requestWithoutTools.systemInstruction?.parts) {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
         for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
           part.text = part.text.replaceAll(from, to);
         }
+        part.text = stripDiagnosticPromptSection(part.text);
       }
     }
 

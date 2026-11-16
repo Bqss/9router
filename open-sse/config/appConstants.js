@@ -186,6 +186,11 @@ export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official C
 // makes the backend flag the request and answer 429 Quota Exhausted.
 export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
+  { from: /\bOpenCode\b/gi, to: "Antigravity" },
+  {
+    from: /You are Hermes Agent[.,]?\s*(?:You are\s+)?an intelligent AI assistant created by Nous Research[.,]?/gi,
+    to: ""
+  },
   { from: /You are Hermes(?: Agent)?(?:,\s*(?:an intelligent AI assistant|an AI assistant|an AI agent))?(?:,?\s*(?:built|created)\s+by\s+Nous Research)?\./gi, to: "You are an AI assistant." },
   // Claude Code prepends this line to its system prompt. The Claude-format translator strips it,
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
@@ -193,10 +198,12 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
   { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant." },
   { from: /solve coding tasks\.\s*Be concise, practical, and tool-aware\./gi, to: "work on their coding tasks. Keep responses concise and practical, and use the available tools when they help." },
-  {
-    from: /You are Hermes Agent[.,]?\s*(?:You are\s+)?an intelligent AI assistant created by Nous Research[.,]?/gi,
-    to: ""
-  }
+  // Remove residual Hermes branding from the rest of the system prompt, not just its opening sentence.
+  { from: /https?:\/\/hermes-agent\.nousresearch\.com\/docs\b/gi, to: "the assistant documentation" },
+  { from: /\bhermes-agent\b/gi, to: "assistant" },
+  { from: /\bHermes Agent\b/gi, to: "AI assistant" },
+  { from: /\bHermes\b/gi, to: "assistant" },
+  { from: /\bNous Research\b/gi, to: "the assistant team" },
 ];
 
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";

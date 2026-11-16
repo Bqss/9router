@@ -13,6 +13,8 @@
 - **Antigravity**: rewrite the OpenClaw identity system sentence to avoid false `429 RESOURCE_EXHAUSTED` responses (#5696)
 - **Antigravity**: rewrite the coding-task system phrase that triggers false `429 RESOURCE_EXHAUSTED` responses (#5701)
 - **Antigravity**: cache terminal no-project onboarding results and fall back chat traffic across sandbox, daily and prod hosts (#2938)
+- **Antigravity**: strip residual Hermes/Nous branding throughout the system prompt; reorder the specific Hermes identity rewrite so the full removal rule runs first
+- **Antigravity**: add diagnostic switches to isolate named system-prompt blocks sequentially while preserving the remaining core prompt; the JSONL record lists removed blocks
 - **Transport**: keep undici on 7.30.2 — undici 8 requires Node 22.19+, so 0.5.116 crashed every outbound `fetch` on older runtimes (`createZstdDecompress.bind` is undefined below Node 22.15). 7.30.2 carries the same security fixes and the stale-socket/happy-eyeballs transport work.
 - **Node floor**: declare `engines.node >= 20.18.1` in both packages (the root manifest had none, the CLI claimed `>=18`).
 - **SenseNova**: add `sensenova-intl` provider on `token.sensenova.ai` for international keys (the `.cn` host returns 401 Forbidden for them)

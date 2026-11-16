@@ -166,6 +166,169 @@ describe("Antigravity executor", () => {
     expect(transformed.request.systemInstruction.parts[0].text).toBe("");
   });
 
+  it("removes residual Hermes branding from the system prompt", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+      request: {
+        systemInstruction: {
+          parts: [{
+            text: "For help with Hermes Agent itself, read https://hermes-agent.nousresearch.com/docs. The hermes-agent skill is available. Hermes delivers this message. Nous Research.",
+          }],
+        },
+        contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      },
+    }, true, {});
+    const text = out.request.systemInstruction.parts.map((part) => part.text || "").join("\n");
+
+    expect(text).not.toMatch(/hermes|nous research/i);
+    expect(text).toContain("the assistant documentation");
+    expect(text).toContain("assistant skill");
+  });
+  it("can strip the complete system prompt in diagnostic mode", () => {
+    const previous = process.env.ANTIGRAVITY_STRIP_SYSTEM_PROMPT;
+    process.env.ANTIGRAVITY_STRIP_SYSTEM_PROMPT = "true";
+    try {
+      const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+        request: {
+          systemInstruction: { parts: [{ text: "Hermes diagnostic prompt" }] },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+
+      expect(out.request.systemInstruction).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.ANTIGRAVITY_STRIP_SYSTEM_PROMPT;
+      else process.env.ANTIGRAVITY_STRIP_SYSTEM_PROMPT = previous;
+    }
+  });
+  it("can strip the available-skills catalog in diagnostic mode", () => {
+    const previous = process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = "available_skills";
+    try {
+      const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+        request: {
+          systemInstruction: {
+            parts: [{ text: "Keep this.\n<available_skills>\nlarge catalog\n</available_skills>\nKeep this too." }],
+          },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+      const text = out.request.systemInstruction.parts[0].text;
+
+      expect(text).toContain("Keep this.");
+      expect(text).toContain("Keep this too.");
+      expect(text).not.toContain("large catalog");
+    } finally {
+      if (previous === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+      else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = previous;
+    }
+  });
+  it("can strip the complete skills block in diagnostic mode", () => {
+    const previous = process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = "skills";
+    try {
+      const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+        request: {
+          systemInstruction: {
+            parts: [{
+              text: "Before.\n## Skills\n<available_skills>\nlarge catalog\n</available_skills>\nOnly proceed without loading a skill if none are relevant.\nActive assistant profile: default\nAfter.",
+            }],
+          },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+      const text = out.request.systemInstruction.parts[0].text;
+
+      expect(text).toContain("Before.");
+      expect(text).toContain("After.");
+      expect(text).not.toContain("large catalog");
+      expect(text).not.toContain("Only proceed without loading");
+    } finally {
+      if (previous === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+      else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = previous;
+    }
+  });
+  it("strips control blocks while preserving core instructions in diagnostic mode", () => {
+    const previous = process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = "control_blocks";
+    try {
+      const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+        request: {
+          systemInstruction: {
+            parts: [{
+              text: "Core instruction.\n## Mid-turn user steering\nmid-turn block\n# Tool-use enforcement\ntool block\n# Google model operational directives\nops block\nYou are chatting inside the assistant desktop app\nUI block\n## Skills\nskills block\nConversation started: metadata",
+            }],
+          },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+      const text = out.request.systemInstruction.parts[0].text;
+
+      expect(text).toContain("Core instruction.");
+      expect(text).toContain("Conversation started: metadata");
+      expect(text).not.toContain("mid-turn block");
+      expect(text).not.toContain("tool block");
+      expect(text).not.toContain("ops block");
+      expect(text).not.toContain("UI block");
+      expect(text).not.toContain("skills block");
+    } finally {
+      if (previous === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+      else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = previous;
+    }
+  });
+  it("removes multiple named prompt blocks in order", () => {
+    const previous = process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS;
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS = "intro,docs";
+    try {
+      const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+        request: {
+          systemInstruction: {
+            parts: [{
+              text: "Intro.\n\nFor help with Hermes Agent, read the docs.\n\n# Finishing the job\nKeep working.\n\nUser task.",
+            }],
+          },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+      const text = out.request.systemInstruction.parts[0].text;
+
+      expect(text).not.toContain("Intro.");
+      expect(text).not.toContain("For help with Hermes Agent");
+      expect(text).toContain("# Finishing the job");
+      expect(text).toContain("User task.");
+    } finally {
+      if (previous === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS;
+      else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS = previous;
+    }
+  });
+  it("removes memory after control blocks have already removed its boundary", () => {
+    const previousSection = process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+    const previousSections = process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS;
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = "control_blocks";
+    process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS = "memory";
+    try {
+      const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+        request: {
+          systemInstruction: {
+            parts: [{
+              text: "Core.\n\nYou have persistent memory, keep this block out.\n\n## Mid-turn user steering\nmid block\n# Tool-use enforcement\ntool block\nConversation started: metadata",
+            }],
+          },
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        },
+      }, true, {});
+      const text = out.request.systemInstruction.parts[0].text;
+
+      expect(text).toContain("Core.");
+      expect(text).toContain("Conversation started: metadata");
+      expect(text).not.toContain("You have persistent memory");
+      expect(text).not.toContain("keep this block out");
+    } finally {
+      if (previousSection === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION;
+      else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTION = previousSection;
+      if (previousSections === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS;
+      else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS = previousSections;
+    }
+  });
   it("rewrites competing-client branding (Zed Claude SDK and OpenCode) in systemInstruction", () => {
     const executor = new AntigravityExecutor();
     const out = executor.transformRequest("gemini-2.5-pro", {
