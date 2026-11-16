@@ -13,6 +13,7 @@ import gemini from "../../open-sse/providers/registry/gemini.js";
 import { MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 import {
   getProjectIdForConnection,
+  invalidateProjectId,
   removeConnection,
 } from "../../open-sse/services/projectId.js";
 
@@ -47,7 +48,7 @@ describe("Gemini Cloud Code endpoint isolation", () => {
     removeConnection(connectionId);
   });
 
-  it("uses the prod cloudcode host for Antigravity discovery but daily for chat", async () => {
+  it("uses the prod cloudcode host for Antigravity discovery and fallback hosts for chat", async () => {
     const connectionId = "antigravity-endpoint-test";
     const fetchMock = vi.fn(async () => cloudCodeResponse("antigravity-project"));
     vi.stubGlobal("fetch", fetchMock);
@@ -59,9 +60,72 @@ describe("Gemini Cloud Code endpoint isolation", () => {
       "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       expect.objectContaining({ method: "POST" })
     );
-    // Chat transport still uses the daily host to bypass prod 429.
-    expect(antigravity.transport.baseUrls).toEqual(["https://daily-cloudcode-pa.googleapis.com"]);
+    // Chat transport leads with sandbox, then falls back to daily and prod.
+    expect(antigravity.transport.baseUrls).toEqual([
+      "https://daily-cloudcode-pa.sandbox.googleapis.com",
+      "https://daily-cloudcode-pa.googleapis.com",
+      "https://cloudcode-pa.googleapis.com",
+    ]);
     removeConnection(connectionId);
+  });
+});
+
+describe("Antigravity project ID terminal misses", () => {
+  it("does not retry or repeat a completed no-project onboarding", async () => {
+    const connectionId = "antigravity-no-project-cache-test";
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes(":loadCodeAssist")) {
+        return {
+          ok: true,
+          json: async () => ({ allowedTiers: [{ id: "standard-tier", isDefault: true }] }),
+        };
+      }
+      if (String(url).includes(":onboardUser")) {
+        return { ok: true, json: async () => ({ done: true, response: {} }) };
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      expect(await getProjectIdForConnection(connectionId, "token", "antigravity")).toBeNull();
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(":onboardUser"))).toHaveLength(1);
+      const callsAfterFirstLookup = fetchMock.mock.calls.length;
+
+      expect(await getProjectIdForConnection(connectionId, "token", "antigravity")).toBeNull();
+      expect(fetchMock.mock.calls).toHaveLength(callsAfterFirstLookup);
+    } finally {
+      removeConnection(connectionId);
+    }
+  });
+
+  it("allows a token refresh to invalidate a cached no-project result", async () => {
+    const connectionId = "antigravity-no-project-invalidation-test";
+    let hasProject = false;
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes(":loadCodeAssist")) {
+        return {
+          ok: true,
+          json: async () => hasProject
+            ? { cloudaicompanionProject: { id: "recovered-project" } }
+            : { allowedTiers: [{ id: "standard-tier", isDefault: true }] },
+        };
+      }
+      if (String(url).includes(":onboardUser")) {
+        return { ok: true, json: async () => ({ done: true, response: {} }) };
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      expect(await getProjectIdForConnection(connectionId, "token", "antigravity")).toBeNull();
+      hasProject = true;
+      invalidateProjectId(connectionId);
+      expect(await getProjectIdForConnection(connectionId, "token", "antigravity")).toBe("recovered-project");
+    } finally {
+      removeConnection(connectionId);
+    }
   });
 });
 

@@ -10,11 +10,16 @@
 import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
-// connectionId -> { projectId: string, fetchedAt: number }
+// connectionId -> { projectId: string|null, fetchedAt: number }
 const projectIdCache = new Map();
 
 /** How long a cached project ID is considered fresh (1 hour). */
 const CACHE_TTL_MS = 60 * 60 * 1000;
+/** How long a failed lookup is remembered (10 minutes). */
+const NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/** Successful project IDs live longer than terminal misses. */
+const cacheTtlFor = (projectId) => projectId ? CACHE_TTL_MS : NEGATIVE_CACHE_TTL_MS;
 
 // ─── Pending-fetch deduplication ─────────────────────────────────────────────
 // connectionId -> { promise: Promise<string|null>, controller: AbortController, startedAt: number }
@@ -34,7 +39,7 @@ export function cleanupNow() {
     const now = Date.now();
 
     for (const [id, entry] of projectIdCache) {
-        if (!entry || now - entry.fetchedAt >= CACHE_TTL_MS) {
+        if (!entry || now - entry.fetchedAt >= cacheTtlFor(entry.projectId)) {
             projectIdCache.delete(id);
         }
     }
@@ -88,7 +93,7 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
 
     // Return cached value if still fresh
     const cached = projectIdCache.get(connectionId);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.fetchedAt < cacheTtlFor(cached.projectId)) {
         return cached.projectId;
     }
 
@@ -103,13 +108,15 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
     const promise = (async () => {
         try {
             const projectId = await fetchProjectId(accessToken, controller.signal, provider);
-            if (projectId) {
-                projectIdCache.set(connectionId, {projectId, fetchedAt: Date.now()});
-                return projectId;
+            projectIdCache.set(connectionId, { projectId: projectId || null, fetchedAt: Date.now() });
+            if (!projectId) {
+                console.warn("[ProjectId] no projectId for connection", connectionId.slice(0, 8), "— using generated id for 10 min");
             }
-            console.warn("[ProjectId] could not fetch projectId for connection", connectionId.slice(0, 8));
-            return null;
+            return projectId || null;
         } catch (error) {
+            if (!controller.signal.aborted) {
+                projectIdCache.set(connectionId, { projectId: null, fetchedAt: Date.now() });
+            }
             console.warn(`[ProjectId] Error fetching project ID: ${error.message}`);
             return null;
         } finally {
@@ -239,7 +246,8 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+                console.log("[ProjectId] onboardUser completed with no project — expected for consumer accounts");
+                return null;
             }
 
             // Server not done yet – wait and retry with jitter

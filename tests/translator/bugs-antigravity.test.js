@@ -181,5 +181,61 @@ describe("Antigravity executor", () => {
 
     expect(out.request.systemInstruction.parts[0].text).toBe(" Antigravity is great.");
   });
+  it.each(["gemini-3.8-flash-high", "claude-sonnet-5-5-high"])("rewrites the OpenClaw identity sentence in systemInstruction for %s", (model) => {
+    const out = new AntigravityExecutor().transformRequest(model, {
+      request: {
+        systemInstruction: {
+          parts: [
+            { text: "Preamble.\nYOU ARE A PERSONAL ASSISTANT RUNNING INSIDE OPENCLAW." },
+            { text: "You are a personal assistant running inside OpenClaw" },
+            { text: "Postamble." },
+          ],
+        },
+        contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      },
+    }, true, {});
+
+    expect(out.request.systemInstruction.parts.map((part) => part.text)).toEqual([
+      "Preamble.\nYou are a personal assistant.",
+      "You are a personal assistant running inside OpenClaw",
+      "Postamble.",
+    ]);
+  });
+
+  it("does not rewrite the no-period variant or user messages", () => {
+    const userText = "You are a personal assistant running inside OpenClaw.";
+    const body = openaiToAntigravityRequest("gemini-3.8-flash-high", {
+      messages: [
+        { role: "system", content: "Keep this.\nYou are a personal assistant running inside OpenClaw" },
+        { role: "user", content: userText },
+      ],
+    }, true);
+    const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash-high", body, true, {});
+    const systemText = out.request.systemInstruction.parts.map((part) => part.text).join("\n");
+    const contentsText = out.request.contents.flatMap((content) => content.parts || []).map((part) => part.text || "").join("\n");
+
+    expect(systemText).toContain("You are a personal assistant running inside OpenClaw");
+    expect(systemText).not.toContain("You are a personal assistant.");
+    expect(contentsText).toContain(userText);
+  });
+  it("rewrites the coding-task false-429 phrase across system-prompt whitespace", () => {
+    const userText = "Please solve coding tasks. Be concise, practical, and tool-aware.";
+    const body = openaiToAntigravityRequest("gemini-3.8-flash-high", {
+      messages: [
+        {
+          role: "system",
+          content: "You are pair programming with a user to solve coding tasks.\nBe concise, practical, and tool-aware.\nKeep this instruction.",
+        },
+        { role: "user", content: userText },
+      ],
+    }, true);
+    const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash-high", body, true, {});
+    const systemText = out.request.systemInstruction.parts.map((part) => part.text).join("\n");
+    const contentsText = out.request.contents.flatMap((content) => content.parts || []).map((part) => part.text || "").join("\n");
+
+    expect(systemText).toContain("work on their coding tasks. Keep responses concise and practical, and use the available tools when they help.");
+    expect(systemText).not.toContain("solve coding tasks.");
+    expect(contentsText).toContain(userText);
+  });
 });
 

@@ -151,9 +151,9 @@ export const CLOUD_CODE_API = {
     loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   },
-  // Project discovery (loadCodeAssist/onboardUser) stays on PROD — the daily host
-  // rejects these auth/onboarding calls. Only chat traffic uses the daily host
-  // (see transport.apiEndpoint in registry/antigravity.js, set to bypass prod 429).
+  // Project discovery (loadCodeAssist/onboardUser) stays on PROD — daily/sandbox
+  // hosts reject these auth/onboarding calls. Chat transport uses sandbox → daily → prod
+  // fallback hosts from the Antigravity registry.
   antigravity: {
     loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
@@ -191,6 +191,8 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
   // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
+  { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant." },
+  { from: /solve coding tasks\.\s*Be concise, practical, and tool-aware\./gi, to: "work on their coding tasks. Keep responses concise and practical, and use the available tools when they help." },
   {
     from: /You are Hermes Agent[.,]?\s*(?:You are\s+)?an intelligent AI assistant created by Nous Research[.,]?/gi,
     to: ""
