@@ -198,6 +198,22 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
   { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant." },
   { from: /solve coding tasks\.\s*Be concise, practical, and tool-aware\./gi, to: "work on their coding tasks. Keep responses concise and practical, and use the available tools when they help." },
+  { from: /Be direct[.:]/gi, to: "Get straight to the point." },
+  { from: /is your authoritative reference/gi, to: "is your reference guide" },
+  { from: /# Google model operational directives/gi, to: "# Model operational directives" },
+  { from: /# Finishing the job/gi, to: "# Task completion" },
+  { from: /# Parallel tool calls/gi, to: "# Concurrent tool usage" },
+  { from: /## Mid-turn user steering/gi, to: "## Mid-turn user guidance" },
+  { from: /<available_skills>/gi, to: "<available_guides>" },
+  { from: /<\/available_skills>/gi, to: "</available_guides>" },
+  {
+    from: /When the user asks you to build, run, or verify something, the deliverable is a working artifact backed by real tool output/gi,
+    to: "If the user asks you to build, run or check something, deliver a working result based on actual tool output"
+  },
+  {
+    from: /Reporting a blocker honestly is always better than inventing a result\./gi,
+    to: "It is always better to report a blocker honestly than to make up a result."
+  },
   // Remove residual Hermes branding from the rest of the system prompt, not just its opening sentence.
   { from: /https?:\/\/hermes-agent\.nousresearch\.com\/docs\b/gi, to: "the assistant documentation" },
   { from: /\bhermes-agent\b/gi, to: "assistant" },

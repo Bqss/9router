@@ -391,10 +391,10 @@ export class AntigravityExecutor extends BaseExecutor {
     } else if (requestWithoutTools.systemInstruction?.parts) {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
+        part.text = stripDiagnosticPromptSection(part.text);
         for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
           part.text = part.text.replaceAll(from, to);
         }
-        part.text = stripDiagnosticPromptSection(part.text);
       }
     }
 

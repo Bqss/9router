@@ -293,7 +293,7 @@ describe("Antigravity executor", () => {
 
       expect(text).not.toContain("Intro.");
       expect(text).not.toContain("For help with Hermes Agent");
-      expect(text).toContain("# Finishing the job");
+      expect(text).toContain("# Task completion");
       expect(text).toContain("User task.");
     } finally {
       if (previous === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS;
@@ -328,6 +328,28 @@ describe("Antigravity executor", () => {
       if (previousSections === undefined) delete process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS;
       else process.env.ANTIGRAVITY_STRIP_PROMPT_SECTIONS = previousSections;
     }
+  });
+  it("rewrites Antigravity shield trigger signatures", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-3.8-flash", {
+      request: {
+        systemInstruction: {
+          parts: [{
+            text: "You are pair programming with a user to solve coding tasks. Be concise, practical, and tool-aware.\nBe direct: answer plainly.\nThis documentation is your authoritative reference.\n# Google model operational directives\n# Finishing the job\nWhen the user asks you to build, run, or verify something, the deliverable is a working artifact backed by real tool output.\nReporting a blocker honestly is always better than inventing a result.",
+          }],
+        },
+        contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      },
+    }, true, {});
+    const text = out.request.systemInstruction.parts[0].text;
+
+    expect(text).not.toContain("solve coding tasks. Be concise, practical, and tool-aware.");
+    expect(text).toContain("work on their coding tasks.");
+    expect(text).toContain("Get straight to the point.");
+    expect(text).toContain("is your reference guide");
+    expect(text).toContain("# Model operational directives");
+    expect(text).toContain("# Task completion");
+    expect(text).toContain("deliver a working result based on actual tool output");
+    expect(text).toContain("It is always better to report a blocker honestly");
   });
   it("rewrites competing-client branding (Zed Claude SDK and OpenCode) in systemInstruction", () => {
     const executor = new AntigravityExecutor();
